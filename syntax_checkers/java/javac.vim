@@ -74,6 +74,14 @@ if !exists("g:syntastic_java_javac_maven_pom_classpath")
     let g:syntastic_java_javac_maven_pom_classpath = {}
 endif
 
+if !exists("g:syntastic_java_javac_maven_args")
+    let g:syntastic_java_javac_maven_args = ''
+endif
+
+if !exists("g:syntastic_java_javac_maven_classpath_cache")
+    let g:syntastic_java_javac_maven_classpath_cache = '.syntastic_maven_classpath'
+endif
+
 function! s:RemoveCarriageReturn(line)
     return substitute(a:line, '\r', '', 'g')
 endfunction
@@ -161,9 +169,15 @@ function! s:GetMavenProperties()
     let pom = findfile("pom.xml", ".;")
     if s:has_maven && filereadable(pom)
         if !has_key(g:syntastic_java_javac_maven_pom_properties, pom)
-            let mvn_cmd = expand(g:syntastic_java_maven_executable) . ' -f ' . pom
             let mvn_is_managed_tag = 1
-            let mvn_settings_output = split(system(mvn_cmd . ' help:effective-pom'), "\n")
+
+            let mvn_cmd = expand(g:syntastic_java_maven_executable)
+            let mvn_cmd .= ' ' . g:syntastic_java_javac_maven_args
+            let mvn_cmd .= ' help:effective-pom '
+            let mvn_cmd .=  ' -f ' . pom
+
+            let mvn_settings_output = split(system(mvn_cmd), "\n")
+
             let current_path = 'project'
             for line in mvn_settings_output
                 let matches = matchlist(line, '\m^\s*<\([a-zA-Z0-9\-\.]\+\)>\s*$')
@@ -192,12 +206,43 @@ endfunction
 
 command! SyntasticJavacEditClasspath call s:EditClasspath()
 
+function! s:GetClasspathFromCache(pom)
+    " Check the local memory cache
+    if !has_key(g:syntastic_java_javac_maven_pom_ftime, a:pom) || g:syntastic_java_javac_maven_pom_ftime[a:pom] != getftime(a:pom)
+        " No local cache so check for a file cache.
+        let pom_directory = fnamemodify(a:pom, ':p:h')
+        let cache_file = pom_directory . '/' . g:syntastic_java_javac_maven_classpath_cache
+        if !filereadable(cache_file) || getftime(a:pom) > getftime(cache_file)
+            return ''
+        endif
+
+        let mvn_classpath = readfile(cache_file)[0]
+        let g:syntastic_java_javac_maven_pom_ftime[a:pom] = getftime(a:pom)
+        let g:syntastic_java_javac_maven_pom_classpath[a:pom] = mvn_classpath
+    endif
+
+    return g:syntastic_java_javac_maven_pom_classpath[a:pom]
+endfunction
+
+function! s:SaveClasspathToCache(pom, mvn_classpath)
+    let pom_directory = fnamemodify(a:pom, ':p:h')
+    let cache_file = pom_directory . '/' . g:syntastic_java_javac_maven_classpath_cache
+    let g:syntastic_java_javac_maven_pom_ftime[a:pom] = getftime(a:pom)
+    let g:syntastic_java_javac_maven_pom_classpath[a:pom] = a:mvn_classpath
+    call writefile([a:mvn_classpath], cache_file)
+endfunction
+
 function! s:GetMavenClasspath()
     let pom = findfile("pom.xml", ".;")
     if s:has_maven && filereadable(pom)
-        if !has_key(g:syntastic_java_javac_maven_pom_ftime, pom) || g:syntastic_java_javac_maven_pom_ftime[pom] != getftime(pom)
-            let mvn_cmd = expand(g:syntastic_java_maven_executable) . ' -f ' . pom
-            let mvn_classpath_output = split(system(mvn_cmd . ' dependency:build-classpath'), "\n")
+        let mvn_classpath = s:GetClasspathFromCache(pom)
+        if empty(mvn_classpath)
+            let mvn_cmd = expand(g:syntastic_java_maven_executable)
+            let mvn_cmd .= ' ' . g:syntastic_java_javac_maven_args
+            let mvn_cmd .= ' dependency:build-classpath '
+            let mvn_cmd .=  ' -f ' . pom
+
+            let mvn_classpath_output = split(system(mvn_cmd), "\n")
             let mvn_classpath = ''
             let class_path_next = 0
 
@@ -213,7 +258,6 @@ function! s:GetMavenClasspath()
 
             let mvn_properties = s:GetMavenProperties()
 
-            let output_dir = 'target/classes'
             if has_key(mvn_properties, 'project.build.outputDirectory')
                 let output_dir = mvn_properties['project.build.outputDirectory']
             endif
@@ -225,10 +269,10 @@ function! s:GetMavenClasspath()
             endif
             let mvn_classpath = s:AddToClasspath(mvn_classpath, test_output_dir)
 
-            let g:syntastic_java_javac_maven_pom_ftime[pom] = getftime(pom)
-            let g:syntastic_java_javac_maven_pom_classpath[pom] = mvn_classpath
+            call s:SaveClasspathToCache(pom, mvn_classpath)
         endif
-        return g:syntastic_java_javac_maven_pom_classpath[pom]
+
+        return mvn_classpath
     endif
     return ''
 endfunction
