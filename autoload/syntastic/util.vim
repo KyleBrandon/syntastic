@@ -1,4 +1,4 @@
-if exists("g:loaded_syntastic_util_autoload")
+if exists('g:loaded_syntastic_util_autoload')
     finish
 endif
 let g:loaded_syntastic_util_autoload = 1
@@ -6,9 +6,13 @@ let g:loaded_syntastic_util_autoload = 1
 let s:save_cpo = &cpo
 set cpo&vim
 
-if !exists("g:syntastic_delayed_redraws")
+if !exists('g:syntastic_delayed_redraws')
     let g:syntastic_delayed_redraws = 0
 endif
+
+" strwidth() was added in Vim 7.3; if it doesn't exist, we use strlen()
+" and hope for the best :)
+let s:width = function(exists('*strwidth') ? 'strwidth' : 'strlen')
 
 let s:redraw_delayed = 0
 let s:redraw_full = 0
@@ -28,8 +32,12 @@ endif
 
 " Public functions {{{1
 
+function! syntastic#util#isRunningWindows()
+    return has('win16') || has('win32') || has('win64')
+endfunction
+
 function! syntastic#util#DevNull()
-    if has('win32')
+    if syntastic#util#isRunningWindows()
         return 'NUL'
     endif
     return '/dev/null'
@@ -106,24 +114,23 @@ function! syntastic#util#wideMsg(msg)
     let old_ruler = &ruler
     let old_showcmd = &showcmd
 
-    "convert tabs to spaces so that the tabs count towards the window width
-    "as the proper amount of characters
-    let msg = substitute(a:msg, "\t", repeat(" ", &tabstop), "g")
-    let msg = strpart(msg, 0, winwidth(0)-1)
+    "This is here because it is possible for some error messages to
+    "begin with \n which will cause a "press enter" prompt.
+    let msg = substitute(a:msg, "\n", "", "g")
 
-    "This is here because it is possible for some error messages to begin with
-    "\n which will cause a "press enter" prompt. I have noticed this in the
-    "javascript:jshint checker and have been unable to figure out why it
-    "happens
-    let msg = substitute(msg, "\n", "", "g")
+    "convert tabs to spaces so that the tabs count towards the window
+    "width as the proper amount of characters
+    let chunks = split(msg, "\t", 1)
+    let msg = join(map(chunks[:-2], 'v:val . repeat(" ", &ts - s:width(v:val) % &ts)'), '') . chunks[-1]
+    let msg = strpart(msg, 0, winwidth(0) - 1)
 
     set noruler noshowcmd
     call syntastic#util#redraw(0)
 
     echo msg
 
-    let &ruler=old_ruler
-    let &showcmd=old_showcmd
+    let &ruler = old_ruler
+    let &showcmd = old_showcmd
 endfunction
 
 " Check whether a buffer is loaded, listed, and not hidden
@@ -150,12 +157,20 @@ endfunction
 function! syntastic#util#findInParent(what, where)
     let here = fnamemodify(a:where, ':p')
 
+    let root = syntastic#util#Slash()
+    if syntastic#util#isRunningWindows() && here[1] == ':'
+        " The drive letter is an ever-green source of fun.  That's because
+        " we don't care about running syntastic on Amiga these days. ;)
+        let root = fnamemodify(root, ':p')
+        let root = here[0] . root[1:]
+    endif
+
     while !empty(here)
         let p = split(globpath(here, a:what), '\n')
 
         if !empty(p)
             return fnamemodify(p[0], ':p')
-        elseif here == '/'
+        elseif here ==? root
             break
         endif
 
@@ -222,6 +237,17 @@ function! syntastic#util#redrawHandler()
     endif
 endfunction
 
+function! syntastic#util#dictFilter(errors, filter)
+    let rules = s:translateFilter(a:filter)
+    " call syntastic#log#debug(g:SyntasticDebugFilters, "applying filter:", rules)
+    try
+        call filter(a:errors, rules)
+    catch /\m^Vim\%((\a\+)\)\=:E/
+        let msg = matchstr(v:exception, '\m^Vim\%((\a\+)\)\=:\zs.*')
+        call syntastic#log#error('quiet_messages: ' . msg)
+    endtry
+endfunction
+
 " Private functions {{{1
 
 "Redraw in a way that doesnt make the screen flicker or leave anomalies behind.
@@ -237,6 +263,31 @@ function! s:doRedraw(full)
     else
         redraw
     endif
+endfunction
+
+function! s:translateFilter(filters)
+    let conditions = []
+    for [k, v] in items(a:filters)
+        if type(v) == type([])
+            call extend(conditions, map(copy(v), 's:translateElement(k, v:val)'))
+        else
+            call add(conditions, s:translateElement(k, v))
+        endif
+    endfor
+    return len(conditions) == 1 ? conditions[0] : join(map(conditions, '"(" . v:val . ")"'), ' && ')
+endfunction
+
+function! s:translateElement(key, term)
+    if a:key ==? 'level'
+        let ret = 'v:val["type"] !=? ' . string(a:term[0])
+    elseif a:key ==? 'type'
+        let ret = a:term ==? 'style' ? 'get(v:val, "subtype", "") !=? "style"' : 'has_key(v:val, "subtype")'
+    elseif a:key ==? 'regex'
+        let ret = 'v:val["text"] !~? ' . string(a:term)
+    elseif a:key ==? 'file'
+        let ret = 'bufname(str2nr(v:val["bufnr"])) !~# ' . string(a:term)
+    endif
+    return ret
 endfunction
 
 let &cpo = s:save_cpo

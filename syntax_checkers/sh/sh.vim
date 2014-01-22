@@ -13,18 +13,21 @@
 if exists("g:loaded_syntastic_sh_sh_checker")
     finish
 endif
-let g:loaded_syntastic_sh_sh_checker=1
+let g:loaded_syntastic_sh_sh_checker = 1
+
+let s:save_cpo = &cpo
+set cpo&vim
 
 function! s:GetShell()
     if !exists('b:shell') || b:shell == ''
         let b:shell = ''
         let shebang = getbufline(bufnr('%'), 1)[0]
-        if len(shebang) > 0
-            if match(shebang, 'bash') >= 0
+        if strlen(shebang) > 0
+            if stridx(shebang, 'bash') >= 0
                 let b:shell = 'bash'
-            elseif match(shebang, 'zsh') >= 0
+            elseif stridx(shebang, 'zsh') >= 0
                 let b:shell = 'zsh'
-            elseif match(shebang, 'sh') >= 0
+            elseif stridx(shebang, 'sh') >= 0
                 let b:shell = 'sh'
             endif
         endif
@@ -39,7 +42,7 @@ endfunction
 function! s:ForwardToZshChecker()
     let registry = g:SyntasticRegistry.Instance()
     if registry.checkable('zsh')
-        return registry.getChecker('zsh', 'zsh').getLocListRaw()
+        return registry.getCheckers('zsh', ['zsh'])[0].getLocListRaw()
     else
         return []
     endif
@@ -56,7 +59,7 @@ function! SyntaxCheckers_sh_sh_IsAvailable() dict
 endfunction
 
 function! SyntaxCheckers_sh_sh_GetLocList() dict
-    if s:GetShell() == 'zsh'
+    if s:GetShell() ==# 'zsh'
         return s:ForwardToZshChecker()
     endif
 
@@ -78,3 +81,8 @@ endfunction
 call g:SyntasticRegistry.CreateAndRegisterChecker({
     \ 'filetype': 'sh',
     \ 'name': 'sh' })
+
+let &cpo = s:save_cpo
+unlet s:save_cpo
+
+" vim: set et sts=4 sw=4:

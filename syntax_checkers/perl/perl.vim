@@ -34,8 +34,14 @@ if !exists('g:syntastic_perl_lib_path')
     let g:syntastic_perl_lib_path = []
 endif
 
+let s:save_cpo = &cpo
+set cpo&vim
+
 function! SyntaxCheckers_perl_perl_IsAvailable() dict
-    return executable(expand(g:syntastic_perl_interpreter))
+    " don't call executable() here, to allow things like
+    " let g:syntastic_perl_interpreter='/usr/bin/env perl'
+    silent! call system(expand(g:syntastic_perl_interpreter) . ' -e ' . syntastic#util#shescape('exit(0)'))
+    return v:shell_error == 0
 endfunction
 
 function! SyntaxCheckers_perl_perl_Preprocess(errors)
@@ -92,3 +98,8 @@ endfunction
 call g:SyntasticRegistry.CreateAndRegisterChecker({
     \ 'filetype': 'perl',
     \ 'name': 'perl'})
+
+let &cpo = s:save_cpo
+unlet s:save_cpo
+
+" vim: set et sts=4 sw=4:

@@ -12,10 +12,14 @@
 " Use a BufWritePre autocommand to that end:
 "   autocmd FileType go autocmd BufWritePre <buffer> Fmt
 "============================================================================
+
 if exists("g:loaded_syntastic_go_go_checker")
     finish
 endif
-let g:loaded_syntastic_go_go_checker=1
+let g:loaded_syntastic_go_go_checker = 1
+
+let s:save_cpo = &cpo
+set cpo&vim
 
 function! SyntaxCheckers_go_go_IsAvailable() dict
     return executable('go') && executable('gofmt')
@@ -44,7 +48,7 @@ function! SyntaxCheckers_go_go_GetLocList() dict
 
     " Test files, i.e. files with a name ending in `_test.go`, are not
     " compiled by `go build`, therefore `go test` must be called for those.
-    if match(expand('%'), '_test.go$') == -1
+    if match(expand('%'), '\m_test\.go$') == -1
         let makeprg = 'go build ' . syntastic#c#NullOutput()
     else
         let makeprg = 'go test -c ' . syntastic#c#NullOutput()
@@ -72,3 +76,8 @@ endfunction
 call g:SyntasticRegistry.CreateAndRegisterChecker({
     \ 'filetype': 'go',
     \ 'name': 'go'})
+
+let &cpo = s:save_cpo
+unlet s:save_cpo
+
+" vim: set et sts=4 sw=4:

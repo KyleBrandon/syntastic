@@ -16,7 +16,10 @@
 if exists("g:loaded_syntastic_ruby_rubocop_checker")
     finish
 endif
-let g:loaded_syntastic_ruby_rubocop_checker=1
+let g:loaded_syntastic_ruby_rubocop_checker = 1
+
+let s:save_cpo = &cpo
+set cpo&vim
 
 function! SyntaxCheckers_ruby_rubocop_IsAvailable() dict
     let exe = self.getExec()
@@ -37,9 +40,9 @@ function! SyntaxCheckers_ruby_rubocop_GetLocList() dict
 
     " convert rubocop severities to error types recognized by syntastic
     for e in loclist
-        if e['type'] == 'F'
+        if e['type'] ==# 'F'
             let e['type'] = 'E'
-        elseif e['type'] != 'W' && e['type'] != 'E'
+        elseif e['type'] !=# 'W' && e['type'] !=# 'E'
             let e['type'] = 'W'
         endif
     endfor
@@ -50,3 +53,8 @@ endfunction
 call g:SyntasticRegistry.CreateAndRegisterChecker({
     \ 'filetype': 'ruby',
     \ 'name': 'rubocop'})
+
+let &cpo = s:save_cpo
+unlet s:save_cpo
+
+" vim: set et sts=4 sw=4:
